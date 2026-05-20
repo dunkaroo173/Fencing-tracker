@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "S-Class Tournament Manager",
+    "slug": "sclass-tournament-manager",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Voice commands for entering bout scores and managing the tournament.",
+        "NSMicrophoneUsageDescription": "Microphone access is needed for voice command input."
+      }
+    },
+    "android": {
+      "adaptiveIcon": { "backgroundColor": "#111827" },
+      "permissions": ["RECORD_AUDIO", "INTERNET"]
+    },
+    "web": {
+      "bundler": "metro",
+      "name": "S-Class Tournament"
+    },
+    "plugins": [
+      ["expo-speech", {}]
+    ]
+  }
+}
