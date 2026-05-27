@@ -1,10 +1,17 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import { viteSingleFile } from "vite-plugin-singlefile";
 
 export default defineConfig({
-  plugins: [react(), viteSingleFile()],
+  plugins: [],
+  resolve: {
+    alias: {
+      "react": "preact/compat",
+      "react-dom/test-utils": "preact/test-utils",
+      "react-dom": "preact/compat",
+      "react/jsx-runtime": "preact/jsx-runtime",
+    },
+  },
   base: "./",
   server: { port: 5173, host: true },
   build: { outDir: "dist" },
+  esbuild: { jsx: "automatic", jsxImportSource: "preact" },
 });
