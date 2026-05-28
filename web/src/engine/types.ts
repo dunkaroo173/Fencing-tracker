@@ -46,4 +46,4 @@ export type Bracket = {
   rounds: BracketMatch[][];
 };
 
-export type Screen = "fencers" | "poules" | "standings" | "de";
+export type Screen = "fencers" | "poules" | "standings" | "de" | "results";

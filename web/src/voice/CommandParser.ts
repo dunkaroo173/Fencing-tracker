@@ -156,8 +156,10 @@ export function parseCommand(raw: string, knownNames: string[] = []): Tournament
     return { type: "NAVIGATE", screen: "fencers" };
   if (/\b(poule|poules|pool|pools)\b/.test(text))
     return { type: "NAVIGATE", screen: "poules" };
-  if (/\b(standing|standings|ranking|rankings|results)\b/.test(text) && !/final|finals/.test(text))
+  if (/\b(standing|standings|ranking|rankings)\b/.test(text))
     return { type: "NAVIGATE", screen: "standings" };
+  if (/\b(result|results|tournament results?|final results?)\b/.test(text) && !/final|finals/.test(text))
+    return { type: "NAVIGATE", screen: "results" };
   if (/\b(bracket|de|elimination|tableau|final|finals)\b/.test(text))
     return { type: "NAVIGATE", screen: "de" };
 

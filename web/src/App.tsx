@@ -35,6 +35,7 @@ export default function App() {
   const [activeBoutId, setActiveBoutId] = useState("");
   const [activeMatchId, setActiveMatchId] = useState("");
   const [eloFinalized, setEloFinalized] = useState(false);
+  const [preElo, setPreElo] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const s = load();
@@ -42,12 +43,14 @@ export default function App() {
     setFencers(s.fencers ?? []);
     setPoules(s.poules ?? []);
     setBracket(s.bracket);
+    if (s.preElo) setPreElo(s.preElo);
+    if (s.eloFinalized) setEloFinalized(s.eloFinalized);
     if (s.screen) setScreen(s.screen);
   }, []);
 
   useEffect(() => {
-    save({ fencers, poules, bracket, screen });
-  }, [fencers, poules, bracket, screen]);
+    save({ fencers, poules, bracket, screen, preElo, eloFinalized });
+  }, [fencers, poules, bracket, screen, preElo, eloFinalized]);
 
   useEffect(() => {
     if (poules.length > 0 && !activeBoutId) {
@@ -87,14 +90,17 @@ export default function App() {
   }
 
   function doFinalizeElo() {
+    const snapshot = Object.fromEntries(fencers.map(f => [f.id, f.elo]));
+    setPreElo(snapshot);
     setFencers(finalizeElo(fencers, poules, bracket));
     setEloFinalized(true);
+    setScreen("results");
   }
 
   function doReset() {
     if (!window.confirm("Clear all tournament data?")) return;
     setFencers([]); setPoules([]); setBracket(undefined);
-    setEloFinalized(false); setScreen("fencers");
+    setEloFinalized(false); setPreElo({}); setScreen("fencers");
     setActivePouleId(""); setActiveBoutId(""); setActiveMatchId("");
     localStorage.removeItem(STORAGE_KEY);
   }
@@ -183,14 +189,14 @@ export default function App() {
 
       {/* Tabs */}
       <div style={{ display: "flex", background: C.white, borderBottom: `1px solid ${C.slate200}` }}>
-        {(["fencers", "poules", "standings", "de"] as Screen[]).map(s => (
+        {(["fencers", "poules", "standings", "de", ...(eloFinalized ? ["results" as Screen] : [])] as Screen[]).map(s => (
           <button key={s} onClick={() => setScreen(s)} style={{
             flex: 1, padding: "8px 4px", border: "none", background: "none", cursor: "pointer",
             borderBottom: screen === s ? `3px solid ${C.indigo}` : "3px solid transparent",
             color: screen === s ? C.indigo : C.slate400, fontSize: 11, fontWeight: 700,
             textTransform: "uppercase", letterSpacing: "0.05em",
           }}>
-            {s === "fencers" ? "👥" : s === "poules" ? "⚔️" : s === "standings" ? "📊" : "🏆"}<br />{s}
+            {s === "fencers" ? "👥" : s === "poules" ? "⚔️" : s === "standings" ? "📊" : s === "de" ? "🏆" : "🎖️"}<br />{s}
           </button>
         ))}
       </div>
@@ -215,6 +221,9 @@ export default function App() {
           <DEScreen fencers={fencers} bracket={bracket} setBracket={setBracket}
             activeMatchId={activeMatchId} setActiveMatchId={setActiveMatchId}
             onFinalizeElo={doFinalizeElo} />
+        )}
+        {screen === "results" && (
+          <ResultsScreen fencers={fencers} poules={poules} bracket={bracket} preElo={preElo} />
         )}
 
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
@@ -530,6 +539,101 @@ function ScoreInput({ value, onChange, done }: { value?: number; onChange: (v: n
   return (
     <input type="number" min={0} max={5} value={value ?? ""} onChange={e => onChange(Number(e.target.value))}
       style={{ width: 42, height: 38, textAlign: "center", border: `1px solid ${done ? "#86efac" : C.slate200}`, borderRadius: 8, fontSize: 16, fontWeight: 700, background: done ? C.greenLight : C.white, outline: "none" }} />
+  );
+}
+
+/* ─────────────── Results ─────────────── */
+function computeFinalRankings(fencers: Fencer[], poules: Poule[], bracket?: Bracket) {
+  const standings = calculatePouleStandings(fencers, poules);
+  const pouleOrder = standings.map(s => s.id);
+
+  if (!bracket || bracket.rounds.length === 0) {
+    return standings.map((s, i) => ({ fencer: fencers.find(f => f.id === s.id)!, place: i + 1 }));
+  }
+
+  const bestRound: Record<string, { round: number; won: boolean }> = {};
+  bracket.rounds.forEach((round, ri) => {
+    round.forEach(match => {
+      if (!match.complete) return;
+      for (const id of [match.aId, match.bId]) {
+        if (!id || id.startsWith("bye-")) continue;
+        const cur = bestRound[id];
+        if (!cur || ri > cur.round)
+          bestRound[id] = { round: ri, won: match.winnerId === id };
+      }
+    });
+  });
+
+  const sorted = [...standings].sort((a, b) => {
+    const aI = bestRound[a.id] ?? { round: -1, won: false };
+    const bI = bestRound[b.id] ?? { round: -1, won: false };
+    if (aI.round !== bI.round) return bI.round - aI.round;
+    if (aI.won !== bI.won) return aI.won ? -1 : 1;
+    return pouleOrder.indexOf(a.id) - pouleOrder.indexOf(b.id);
+  });
+
+  return sorted.map((s, i) => ({ fencer: fencers.find(f => f.id === s.id)!, place: i + 1 }));
+}
+
+function ResultsScreen({ fencers, poules, bracket, preElo }: {
+  fencers: Fencer[]; poules: Poule[]; bracket?: Bracket; preElo: Record<string, number>;
+}) {
+  const rankings = computeFinalRankings(fencers, poules, bracket);
+  const MEDALS = ["🥇", "🥈", "🥉"];
+
+  if (rankings.length === 0)
+    return <div style={{ color: C.slate400, fontStyle: "italic", textAlign: "center", padding: 24 }}>Finalize ELO to see results.</div>;
+
+  const champion = rankings[0]?.fencer;
+
+  return (
+    <>
+      {champion && (
+        <div style={{ textAlign: "center", background: C.yellowLight, border: `2px solid ${C.yellow}`, borderRadius: 16, padding: "16px 12px" }}>
+          <div style={{ fontSize: 36 }}>🎖️</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#92400e" }}>{champion.name}</div>
+          <div style={{ color: "#b45309", fontWeight: 600, fontSize: 14 }}>Tournament Champion</div>
+        </div>
+      )}
+
+      <div style={{ fontWeight: 700, fontSize: 18 }}>Final Rankings</div>
+
+      {/* Table */}
+      <div style={{ background: C.white, borderRadius: 14, border: `1px solid ${C.slate200}`, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+        <div style={{ display: "flex", padding: "8px 12px", background: C.slate100, fontWeight: 700, fontSize: 11, color: C.slate600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          <span style={{ width: 40 }}>#</span>
+          <span style={{ flex: 1 }}>Name</span>
+          <span style={{ width: 52, textAlign: "right" }}>Before</span>
+          <span style={{ width: 52, textAlign: "right" }}>After</span>
+          <span style={{ width: 44, textAlign: "right" }}>Δ</span>
+        </div>
+        {rankings.map(({ fencer, place }, i) => {
+          const before = preElo[fencer.id] ?? fencer.rating;
+          const after = fencer.elo;
+          const delta = after - before;
+          return (
+            <div key={fencer.id} style={{
+              display: "flex", alignItems: "center", padding: "10px 12px",
+              background: i < 3 ? "#fffbeb" : i % 2 === 0 ? C.white : C.slate100,
+              borderTop: `1px solid ${C.slate200}`,
+            }}>
+              <span style={{ width: 40, fontSize: i < 3 ? 18 : 14, fontWeight: 700, color: i >= 3 ? C.slate400 : "inherit" }}>
+                {MEDALS[i] ?? place}
+              </span>
+              <span style={{ flex: 1, fontWeight: i < 3 ? 700 : 400, fontSize: 14 }}>{fencer.name}</span>
+              <span style={{ width: 52, textAlign: "right", color: C.slate400, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{before}</span>
+              <span style={{ width: 52, textAlign: "right", fontWeight: 600, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{after}</span>
+              <span style={{
+                width: 44, textAlign: "right", fontWeight: 700, fontSize: 13, fontVariantNumeric: "tabular-nums",
+                color: delta > 0 ? C.green : delta < 0 ? C.red : C.slate400,
+              }}>
+                {delta > 0 ? `+${delta}` : delta === 0 ? "—" : delta}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
